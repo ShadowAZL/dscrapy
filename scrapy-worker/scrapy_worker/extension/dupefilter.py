@@ -1,0 +1,3 @@
+from scrapy_splash.dupefilter import splash_request_fingerprint
+
+request_fingerprint = splash_request_fingerprint
