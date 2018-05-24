@@ -17,7 +17,7 @@ REDIS_PARAMS = {
 }
 
 SCHEDULER_QUEUE_KEY = '%(spider)s:requests'
-SCHEDULER_QUEUE_CLASS = 'scrapy_redis.cqueue.PriorityCacheQueue'
+SCHEDULER_QUEUE_CLASS = 'scrapy_redis.queue.CacheQueue'
 SCHEDULER_DUPEFILTER_KEY = '%(spider)s:dupefilter'
 SCHEDULER_DUPEFILTER_CLASS = 'scrapy_redis.dupefilter.RedisDupeFilter'
 

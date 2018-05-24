@@ -1,7 +1,11 @@
 import importlib
 import six
 
+from scrapy.core import scheduler
+from scrapy import signals
 from scrapy.utils.misc import load_object
+
+from twisted.internet import threads
 
 from . import connection, defaults
 
@@ -115,9 +119,11 @@ class Scheduler(object):
 
     @classmethod
     def from_crawler(cls, crawler):
+        if not crawler.settings.getbool('SCRAPY_REDIS_ENABLED'):
+            return scheduler.Scheduler.from_crawler(crawler)
         instance = cls.from_settings(crawler.settings)
-        # FIXME: for now, stats are only supported from this constructor
         instance.stats = crawler.stats
+        instance.signals = crawler.signals
         return instance
 
     def open(self, spider):
@@ -151,12 +157,11 @@ class Scheduler(object):
         self.queue.clear()
 
     def enqueue_request(self, request):
-        if not request.dont_filter and self.df.request_seen(request):
-            self.df.log(request, self.spider)
-            return False
-        if self.stats:
-            self.stats.inc_value('scheduler/enqueued/redis', spider=self.spider)
-        self.queue.push(request)
+        def _back(result):
+            if not result:
+                self.signals.send_catch_log(signal=signals.request_dropped,
+                                            request=request, spider=self.spider)
+        threads.deferToThread(self._enqueue_request, request).addCallback(_back)
         return True
 
     def next_request(self):
@@ -168,3 +173,12 @@ class Scheduler(object):
 
     def has_pending_requests(self):
         return len(self) > 0
+
+    def _enqueue_request(self, request):
+        if not request.dont_filter and self.df.request_seen(request):
+            self.df.log(request, self.spider)
+            return False
+        if self.stats:
+            self.stats.inc_value('scheduler/enqueued/redis', spider=self.spider)
+        self.queue.push(request)
+        return True

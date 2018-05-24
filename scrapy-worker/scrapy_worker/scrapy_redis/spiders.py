@@ -2,6 +2,9 @@ from scrapy import signals
 from scrapy.exceptions import DontCloseSpider
 from scrapy.spiders import Spider, CrawlSpider
 
+from functools import partial, wraps
+from twisted.internet import threads
+
 from . import connection, defaults
 from .utils import bytes_to_str
 
@@ -14,10 +17,17 @@ class RedisMixin(object):
 
     # Redis client placeholder.
     server = None
+    defered = None
 
     def start_requests(self):
         """Returns a batch of start requests from redis."""
-        return self.next_requests()
+        if self.defered is None:
+            def _ret(_):
+                self.defered = None
+                return _
+            self.defered = threads.deferToThread(self._next_requests)
+            self.defered.addBoth(_ret)
+        yield self.defered
 
     def setup_redis(self, crawler=None):
         """Setup redis connection and idle signal.
@@ -72,27 +82,29 @@ class RedisMixin(object):
         # that's when we will schedule new requests from redis queue
         crawler.signals.connect(self.spider_idle, signal=signals.spider_idle)
 
-    def next_requests(self):
+    def _next_requests(self):
         """Returns a request to be scheduled or none."""
         use_set = self.settings.getbool('REDIS_START_URLS_AS_SET', defaults.START_URLS_AS_SET)
-        fetch_one = self.server.spop if use_set else self.server.lpop
         # XXX: Do we need to use a timeout here?
         found = 0
-        # TODO: Use redis pipeline execution.
-        while found < self.redis_batch_size:
-            data = fetch_one(self.redis_key)
-            if not data:
-                # Queue empty.
-                break
-            req = self.make_request_from_data(data)
-            if req:
-                yield req
-                found += 1
-            else:
-                self.logger.debug("Request not made from data: %r", data)
-
+        data = []
+        with self.server.pipeline(transaction=False) as pipe:
+            fetch_one = pipe.spop if use_set else pipe.lpop
+            for _ in range(self.redis_batch_size):
+                fetch_one(self.redis_key)
+            raw_data = pipe.execute()
+            for d in raw_data:
+                if not d:
+                    continue
+                req = self.make_request_from_data(d)
+                if req:
+                    data.append(req)
+                    found += 1
+                else:
+                    self.logger.debug("Request not made from data: %r", data)
         if found:
             self.logger.debug("Read %s requests from '%s'", found, self.redis_key)
+        return data
 
     def make_request_from_data(self, data):
         """Returns a Request instance from data coming from Redis.
@@ -111,9 +123,14 @@ class RedisMixin(object):
 
     def schedule_next_requests(self):
         """Schedules a request if available"""
-        # TODO: While there is capacity, schedule a batch of redis requests.
-        for req in self.next_requests():
-            self.crawler.engine.crawl(req, spider=self)
+        if self.defered is None:
+            defer = threads.deferToThread(self._next_requests)
+
+            def _succeed(data):
+                for req in data:
+                    self.crawler.engine.crawl(req, spider=self)
+                self.defered = None
+            defer.addCallback(_succeed)
 
     def spider_idle(self):
         """Schedules a request if available, otherwise waits."""
@@ -149,8 +166,8 @@ class RedisSpider(RedisMixin, Spider):
     """
 
     @classmethod
-    def from_crawler(self, crawler, *args, **kwargs):
-        obj = super(RedisSpider, self).from_crawler(crawler, *args, **kwargs)
+    def from_crawler(cls, crawler, *args, **kwargs):
+        obj = super(RedisSpider, cls).from_crawler(crawler, *args, **kwargs)
         obj.setup_redis(crawler)
         return obj
 
@@ -181,7 +198,14 @@ class RedisCrawlSpider(RedisMixin, CrawlSpider):
     """
 
     @classmethod
-    def from_crawler(self, crawler, *args, **kwargs):
-        obj = super(RedisCrawlSpider, self).from_crawler(crawler, *args, **kwargs)
+    def from_crawler(cls, crawler, *args, **kwargs):
+        obj = super(RedisCrawlSpider, cls).from_crawler(crawler, *args, **kwargs)
         obj.setup_redis(crawler)
         return obj
+
+
+def run_thread(func):
+    @wraps(func)
+    def warpper(*args, **kwargs):
+        return threads.deferToThread(func, *args, **kwargs)
+    return warpper

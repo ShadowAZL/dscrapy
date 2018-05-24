@@ -1,5 +1,5 @@
 from scrapy import signals
-from scrapy.exceptions import NotSupported
+from scrapy.exceptions import NotSupported, NotConfigured
 from scrapy_zookeeper.zoo_watcher import Register
 from scrapy_webservice.webservice import WebService
 
@@ -12,6 +12,8 @@ class Watcher(object):
 
     @classmethod
     def from_crawler(cls, crawler):
+        if not crawler.settings.getbool('ZOOKEEPER_ENABLED'):
+            raise NotConfigured
         return cls(crawler)
 
     def engine_started(self):

@@ -7,11 +7,14 @@ from extension.spiders import DCrawlSpider
 from scrapy.http import Request
 from scrapy.spiders.crawl import Rule
 from scrapy.linkextractors import LinkExtractor
+from scrapy.spiders import CrawlSpider
+from scrapy_redis.spiders import RedisCrawlSpider
+
 
 from scrapy_worker.items import BookItem
 
 
-class QidianSpider(DCrawlSpider):
+class QidianSpider(RedisCrawlSpider):
     name = 'qidian'
     allowed_domains = ['qidian.com']
 

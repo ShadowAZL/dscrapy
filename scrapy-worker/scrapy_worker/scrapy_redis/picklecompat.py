@@ -8,5 +8,4 @@ def loads(s):
 
 
 def dumps(obj):
-    print(obj)
     return pickle.dumps(obj)

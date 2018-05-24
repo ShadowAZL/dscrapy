@@ -46,7 +46,7 @@ class ZooWatcher(object):
 class Register(object):
     def __init__(self, path, value, hosts='127.0.0.1:2181'):
         self.path = path
-        self.value = value
+        self.value = b"192.168.31.218:6023"
         self.expire = False
         self.zk = KazooClient(hosts)
         self.zk.start()

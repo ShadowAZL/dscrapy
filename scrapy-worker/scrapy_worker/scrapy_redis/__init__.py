@@ -1,1 +1,8 @@
-
+"""
+主要变化:
+sider的start_urls变为异步，并添加StatrURLMiddleware使其可以成功执行
+scheduler的enqueue_request变为异步的，并且一直返回True，当异步结果出来时，发送request_dropped信号
+scheduler变化后，queue也需要变化，将queue变为缓冲型队列
+dupefilter修改使其可以变换去重策略，并添加布隆过滤
+修改序列化模块picklecompat，将pickle序列化改为mspack序列化
+"""

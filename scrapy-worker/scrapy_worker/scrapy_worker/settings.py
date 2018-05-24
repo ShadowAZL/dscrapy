@@ -36,7 +36,7 @@ CONCURRENT_REQUESTS = 64
 # See also autothrottle settings and docs
 #DOWNLOAD_DELAY = 5
 # The download delay setting will honor only one of:
-#CONCURRENT_REQUESTS_PER_DOMAIN = 16
+CONCURRENT_REQUESTS_PER_DOMAIN = 32
 #CONCURRENT_REQUESTS_PER_IP = 16
 
 # Disable cookies (enabled by default)
@@ -55,6 +55,7 @@ COOKIES_ENABLED = False
 # See http://scrapy.readthedocs.org/en/latest/topics/spider-middleware.html
 SPIDER_MIDDLEWARES = {
     'scrapy_splash.SplashDeduplicateArgsMiddleware': 100,
+    'scrapy_redis.starturls.StatrURLMiddleware': 101
 }
 
 # Enable or disable downloader middlewares
@@ -90,9 +91,9 @@ AUTOTHROTTLE_START_DELAY = 5
 AUTOTHROTTLE_MAX_DELAY = 60
 # The average number of requests Scrapy should be sending in parallel to
 # each remote server
-AUTOTHROTTLE_TARGET_CONCURRENCY = 3.0
+AUTOTHROTTLE_TARGET_CONCURRENCY = 8.0
 # Enable showing throttling stats for every response received:
-AUTOTHROTTLE_DEBUG = True
+AUTOTHROTTLE_DEBUG = False
 
 # Enable and configure HTTP caching (disabled by default)
 # See http://scrapy.readthedocs.org/en/latest/topics/downloader-middleware.html#httpcache-middleware-settings
@@ -116,30 +117,46 @@ COOKIES_DEBUG = True
 HTTPCACHE_STORAGE = 'scrapy_splash.SplashAwareFSCacheStorage'
 
 SPLASH_URL = 'http://192.168.170.131:8050'
+
+
+# Redis Setting
 # Enables scheduling storing requests queue in redis.
+SCRAPY_REDIS_ENABLED = True
 SCHEDULER = 'scrapy_redis.scheduler.Scheduler'
-
-# Enables stats collector in redis.
-STATS_CLASS = 'extension.statscollectors.RedisStatsCollector'
-
 # Ensure all spiders share same duplicates filter through redis.
 DUPEFILTER_CLASS = 'scrapy_redis.dupefilter.RedisDupeFilter'
-
+# Bloom Filter Enabled
+BLOOMFILTER_ENABLED = False
 # Use other encoding than utf-8 for redis.
 REDIS_ENCODING = 'utf-8'
-
 # Specify the host and port to use when connecting to Redis (optional).
 REDIS_HOST = '192.168.31.218'
 REDIS_PORT = '6379'
+# Enables stats collector in redis.
+STATS_CLASS = 'extension.statscollectors.RedisStatsCollector'
 
+# MongoDb settings
+# Enabled MongoDB
+MONGODB_ENABLED = True
 # Specify the uri to use when connecting to mongodb (optional).
 MONGODB_URI = 'mongodb://192.168.31.218:27017'
 
 # enable web services
 WEBSERVICE_ENABLED = True
 
+
+# zookeeper setting
+# disable zookeeper
+ZOOKEEPER_ENABLED = True
 # zookeeper hosts
 ZOOKEEPER_HOSTS = '127.0.0.1:2181'
-
 # watch node path in zookeeper
 ZOOKEEPER_PATH = '/scrapy_worker/child'
+
+
+# PhantomJS setting
+# PhantomJS Enabled
+PHANTOMJS_ENABLED = False
+
+
+LOG_LEVEL = 'INFO'

@@ -5,7 +5,7 @@ from datetime import datetime
 class RedisAgent(object):
     def __init__(self, settings):
         self.settings = settings
-        self.redis_cli = StrictRedis(host=config['REDIS_HOST'], port=config['REDIS_PORT'])
+        self.redis_cli = StrictRedis(host=settings['REDIS_HOST'], port=settings['REDIS_PORT'])
 
     def send_start_urls(self, start_urls=None):
         start_urls = start_urls or self.settings['START_URLS']

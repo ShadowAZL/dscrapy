@@ -1,7 +1,10 @@
 import six
 import logging
+from scrapy.exceptions import NotConfigured
 from scrapy.exporters import BaseItemExporter
 from pymongo import MongoClient
+from twisted.internet import threads
+import datetime
 
 
 class MongoDBPipeline(BaseItemExporter):
@@ -9,22 +12,21 @@ class MongoDBPipeline(BaseItemExporter):
     # Default options
     config = {
         'uri': 'mongodb://localhost:27017',
-        'fsync': False,
-        'write_concern': 0,
         'database': '%(spider)s',
         'collection': 'items',
-        'separate_collections': False,
-        'replica_set': None,
-        'unique_key': None,
-        'buffer': None,
-        'append_timestamp': False,
-        'stop_on_duplicate': 0,
+        'append_timestamp': True
     }
 
     def __init__(self, **kwargs):
         """ Constructor """
         super(MongoDBPipeline, self).__init__(**kwargs)
         self.logger = logging.getLogger(__name__)
+
+    @classmethod
+    def from_settings(cls, settings):
+        if not settings.getbool('MONGODB_ENABLED'):
+            raise NotConfigured
+        return cls()
 
     def open_spider(self, spider):
         # Configure the connection
@@ -33,8 +35,7 @@ class MongoDBPipeline(BaseItemExporter):
 
         # Connecting to a stand alone MongoDB
         connection = MongoClient(
-            self.config['uri'],
-            fsync=self.config['fsync'])
+            self.config['uri'])
         self.logger.info('MongoDb Connect %s', self.config['uri'])
 
         # Set up the database
@@ -48,16 +49,8 @@ class MongoDBPipeline(BaseItemExporter):
         # Set all regular options
         options = [
             ('uri', 'MONGODB_URI'),
-            ('fsync', 'MONGODB_FSYNC'),
-            ('write_concern', 'MONGODB_REPLICA_SET_W'),
             ('database', 'MONGODB_DATABASE'),
-            ('collection', 'MONGODB_COLLECTION'),
-            ('separate_collections', 'MONGODB_SEPARATE_COLLECTIONS'),
-            ('replica_set', 'MONGODB_REPLICA_SET'),
-            ('unique_key', 'MONGODB_UNIQUE_KEY'),
-            ('buffer', 'MONGODB_BUFFER_DATA'),
-            ('append_timestamp', 'MONGODB_ADD_TIMESTAMP'),
-            ('stop_on_duplicate', 'MONGODB_STOP_ON_DUPLICATE')
+            ('collection', 'MONGODB_COLLECTION')
         ]
 
         for key, setting in options:
@@ -66,12 +59,10 @@ class MongoDBPipeline(BaseItemExporter):
 
     def process_item(self, item, spider):
         """ Process the item and add it to MongoDB
-        :type item: Item object
-        :param item: The item to put into MongoDB
-        :type spider: BaseSpider object
-        :param spider: The spider running the queries
-        :returns: Item object
         """
+        return threads.deferToThread(self._process_item, item, spider)
+
+    def _process_item(self, item, spider):
         item = dict(self._get_serialized_fields(item))
 
         item = dict((k, v) for k, v in six.iteritems(item) if v)
@@ -80,5 +71,3 @@ class MongoDBPipeline(BaseItemExporter):
             item['scrapy-mongodb'] = {'ts': datetime.datetime.utcnow()}
 
         self.collections.insert_one(item)
-
-        return item

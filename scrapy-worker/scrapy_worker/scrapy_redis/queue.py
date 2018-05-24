@@ -1,5 +1,6 @@
 from scrapy.utils.reqser import request_to_dict, request_from_dict
-
+from scrapy import signals
+from twisted.internet import threads
 from . import picklecompat
 
 
@@ -22,8 +23,6 @@ class Base(object):
 
         """
         if serializer is None:
-            # Backward compatibility.
-            # TODO: deprecate pickle.
             serializer = picklecompat
         if not hasattr(serializer, 'loads'):
             raise TypeError("serializer does not implement 'loads' function: %r"
@@ -64,79 +63,118 @@ class Base(object):
         self.server.delete(self.key)
 
 
-class FifoQueue(Base):
-    """Per-spider FIFO queue"""
+class CacheQueue(Base):
+    def __init__(self, cache_limit=10, *args, **kwargs):
+        super(CacheQueue, self).__init__(*args, **kwargs)
+        self.cache = None
+        self.cache_limit = cache_limit
+        self.defered = None
 
     def __len__(self):
         """Return the length of the queue"""
-        return self.server.llen(self.key)
-
-    def push(self, request):
-        """Push a request"""
-        self.server.lpush(self.key, self._encode_request(request))
-
-    def pop(self, timeout=0):
-        """Pop a request"""
-        if timeout > 0:
-            data = self.server.brpop(self.key, timeout)
-            if isinstance(data, tuple):
-                data = data[1]
-        else:
-            data = self.server.rpop(self.key)
-        if data:
-            return self._decode_request(data)
-
-
-class PriorityQueue(Base):
-    """Per-spider priority queue abstraction using redis' sorted set"""
-
-    def __len__(self):
-        """Return the length of the queue"""
-        return self.server.zcard(self.key)
+        return self.defered is not None or self.server.zcard(self.key)
 
     def push(self, request):
         """Push a request"""
         data = self._encode_request(request)
         score = -request.priority
-        # We don't use zadd method as the order of arguments change depending on
-        # whether the class is Redis or StrictRedis, and the option of using
-        # kwargs only accepts strings, not bytes.
         self.server.execute_command('ZADD', self.key, score, data)
+
+    def pop(self, timeout=0):
+        """
+        Pop a request
+        """
+        if not self.cache and not self.defered:
+            def _ret(requests):
+                self.cache = requests
+                return requests
+            def _cb(_):
+                self.defered = None
+                return _
+            self.defered = threads.deferToThread(self._fetch)
+            self.defered.addCallback(_ret)
+            self.defered.addBoth(_cb)
+        if self.cache:
+            return self._decode_request(self.cache.pop())
+
+    def _fetch(self):
+        # use atomic range/remove using multi/exec
+        pipe = self.server.pipeline()
+        pipe.multi()
+        pipe.zrange(self.key, 0, self.cache_limit, desc=True).zremrangebyrank(self.key, 0, self.cache_limit)
+        results, count = pipe.execute()
+        return results
+
+
+class PriorityCacheQueue(Base):
+    """Per-spider priority queue abstraction using redis' sorted set"""
+    def __init__(self, *args, **kwargs):
+        self.cache_size = kwargs.pop('cache_size', 10)
+        self.enqueue_cache = []
+        self.dequeue_cache = []
+        self.defered = None
+        super(PriorityCacheQueue, self).__init__(*args, **kwargs)
+
+        self.spider.crawler.signals.connect(self.flush, signal=signals.spider_idle)
+
+    def __len__(self):
+        """Return the length of the queue"""
+        return self.defered is not None or self.server.zcard(self.key)
+
+    def push(self, request):
+        """Push a request"""
+
+        data = self._encode_request(request)
+        score = -request.priority
+        self.enqueue_cache.append((score, data))
+
+        if len(self.enqueue_cache) > self.cache_size or len(self.dequeue_cache) == 0:
+            self.flush()
 
     def pop(self, timeout=0):
         """
         Pop a request
         timeout not support in this queue class
         """
+        if not self.dequeue_cache and not self.defered:
+            self.fetch()
+
+        if self.dequeue_cache:
+            return self._decode_request(self.dequeue_cache.pop())
+
+    def flush(self):
+        if not self.enqueue_cache:
+            return
+        requests = self.enqueue_cache[:]
+        self.enqueue_cache.clear()
+        threads.deferToThread(self._flush, requests)
+
+    def _flush(self, requests):
+        pipe = self.server.pipeline(transaction=False)
+        for score, data in requests:
+            pipe.execute_command('ZADD', self.key, score, data)
+        pipe.execute()
+
+    def fetch(self):
+        # use atomic range/remove using multi/exec
+        self.defered = threads.deferToThread(self._fetch)
+
+        def _cb(results):
+            if results:
+                self.dequeue_cache = results
+            if len(self.enqueue_cache) > self.cache_size or len(self.dequeue_cache) == 0:
+                self.flush()
+
+        def _clear(_):
+            self.defered = None
+            return _
+        self.defered.addCallback(_cb)
+        self.defered.addBoth(_clear)
+
+    def _fetch(self):
         # use atomic range/remove using multi/exec
         pipe = self.server.pipeline()
         pipe.multi()
-        pipe.zrange(self.key, 0, 0).zremrangebyrank(self.key, 0, 0)
+        pipe.zrange(self.key, 0, self.cache_size, desc=True).zremrangebyrank(self.key, 0, self.cache_size)
         results, count = pipe.execute()
-        if results:
-            return self._decode_request(results[0])
-
-
-class LifoQueue(Base):
-    """Per-spider LIFO queue."""
-
-    def __len__(self):
-        """Return the length of the stack"""
-        return self.server.llen(self.key)
-
-    def push(self, request):
-        """Push a request"""
-        self.server.lpush(self.key, self._encode_request(request))
-
-    def pop(self, timeout=0):
-        """Pop a request"""
-        if timeout > 0:
-            data = self.server.blpop(self.key, timeout)
-            if isinstance(data, tuple):
-                data = data[1]
-        else:
-            data = self.server.lpop(self.key)
-
-        if data:
-            return self._decode_request(data)
-
+        return results
