@@ -18,16 +18,20 @@ class BloomFilter(object):
         self.key = key
         self.maps = [HashMap(self.m, seed) for seed in self.seeds]
 
-    def exists(self, value):
+    def exists(self, value, pipe=None):
+        server = pipe or self.server
+
         if not value:
             return False
         exist = True
         for map in self.maps:
             offset = map.hash(value)
-            exist = exist & self.server.getbit(self.key, offset)
+            exist = exist & server.getbit(self.key, offset)
         return exist
 
-    def insert(self, value):
+    def insert(self, value, pipe=None):
+        server = pipe or self.server
+
         for f in self.maps:
             offset = f.hash(value)
-            self.server.setbit(self.key, offset, 1)
+            server.setbit(self.key, offset, 1)

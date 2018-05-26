@@ -80,15 +80,6 @@ class RedisDupeFilter(RFPDupeFilter):
 
     def request_seen(self, request):
         """Returns True if request was already seen.
-
-        Parameters
-        ----------
-        request : scrapy.http.Request
-
-        Returns
-        -------
-        bool
-
         """
         fp = self.request_fingerprint(request)
         # This returns the number of values added, zero if already exists.

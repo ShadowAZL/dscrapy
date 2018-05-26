@@ -8,6 +8,10 @@
 from scrapy import signals
 from scrapy.exceptions import NotConfigured
 from scrapy.http import HtmlResponse
+from scrapy.utils.python import to_native_str
+from twisted.internet import task
+
+from scrapy_redis.connection import get_redis_from_settings
 
 import random
 
@@ -31,10 +35,25 @@ class ProxyMiddleware(object):
 
     @classmethod
     def from_crawler(cls, crawler):
+        settings = crawler.settings
+        if settings.getbool('REDIS_IP_PROXY_ENABLED'):
+            ipproxy_key = crawler.settings.get('REDIS_IP_PROXY_KEY')
+            server = get_redis_from_settings(crawler.settings)
+            return cls(server=server, key=ipproxy_key)
         return cls(crawler.settings.get('PROXIES'))
 
-    def __init__(self, proxies=()):
+    def __init__(self, proxies=None, server=None, key=None, limit=10, freq=120):
         self.proxies = proxies
+        self.limit = limit
+        if server is not None and key is not None:
+            self.server = server
+            self.key = key
+            self.proxies = [to_native_str(i) for i in self.server.srandmember(self.key, self.limit)]
+            self.heartbeat = task.LoopingCall(self._update_ip)
+            self.heartbeat.start(freq)
+
+    def _update_ip(self):
+        self.proxies = [to_native_str(i) for i in self.server.srandmember(self.key, self.limit)]
 
     def process_request(self, request, spider):
         request.meta['proxy'] = random.choice(self.proxies)

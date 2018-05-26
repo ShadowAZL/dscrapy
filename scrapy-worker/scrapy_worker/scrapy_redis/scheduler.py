@@ -134,6 +134,7 @@ class Scheduler(object):
                 spider=spider,
                 key=self.queue_key % {'spider': spider.name},
                 serializer=self.serializer,
+                scheduler=self
             )
         except TypeError as e:
             raise ValueError("Failed to instantiate queue class '%s': %s",
@@ -179,5 +180,14 @@ class Scheduler(object):
             return False
         if self.stats:
             self.stats.inc_value('scheduler/enqueued/redis', spider=self.spider)
+        self.queue.push(request)
+        return True
+
+
+class CacheScheduler(Scheduler):
+    def enqueue_request(self, request):
+        """
+        scheduler does noting. Queue will do the rest.
+        """
         self.queue.push(request)
         return True

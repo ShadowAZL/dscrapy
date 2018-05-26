@@ -7,7 +7,7 @@ from . import picklecompat
 class Base(object):
     """Per-spider base queue class"""
 
-    def __init__(self, server, spider, key, serializer=None):
+    def __init__(self, server, spider, key, serializer=None, scheduler=None):
         """Initialize per-spider redis queue.
 
         Parameters
@@ -35,6 +35,7 @@ class Base(object):
         self.spider = spider
         self.key = key % {'spider': spider.name}
         self.serializer = serializer
+        self.scheduler = scheduler
 
     def _encode_request(self, request):
         """Encode a request object"""
@@ -106,14 +107,14 @@ class CacheQueue(Base):
         return results
 
 
-class PriorityCacheQueue(Base):
+class DoubleCacheQueue(Base):
     """Per-spider priority queue abstraction using redis' sorted set"""
     def __init__(self, *args, **kwargs):
         self.cache_size = kwargs.pop('cache_size', 10)
         self.enqueue_cache = []
         self.dequeue_cache = []
         self.defered = None
-        super(PriorityCacheQueue, self).__init__(*args, **kwargs)
+        super(DoubleCacheQueue, self).__init__(*args, **kwargs)
 
         self.spider.crawler.signals.connect(self.flush, signal=signals.spider_idle)
 
@@ -124,9 +125,8 @@ class PriorityCacheQueue(Base):
     def push(self, request):
         """Push a request"""
 
-        data = self._encode_request(request)
         score = -request.priority
-        self.enqueue_cache.append((score, data))
+        self.enqueue_cache.append((score, request))
 
         if len(self.enqueue_cache) > self.cache_size or len(self.dequeue_cache) == 0:
             self.flush()
@@ -147,13 +147,31 @@ class PriorityCacheQueue(Base):
             return
         requests = self.enqueue_cache[:]
         self.enqueue_cache.clear()
-        threads.deferToThread(self._flush, requests)
+        dfd = threads.deferToThread(self._flush, requests)
+
+        def _request_drop(res):
+            for f, r in zip(res, requests):
+                if not f:
+                    self.scheduler.signals.send_catch_log(signal=signals.request_dropped,
+                                                request=r, spider=self.spider)
+        dfd.addCallback(_request_drop)
 
     def _flush(self, requests):
+        df = self.scheduler.df
+        req = []
+        for _, r in requests:
+            if not r.dont_filter and df.request_seen(r):
+                df.log(r, self.spider)
+                req.append(False)
+            else:
+                req.append(True)
+
         pipe = self.server.pipeline(transaction=False)
-        for score, data in requests:
-            pipe.execute_command('ZADD', self.key, score, data)
+        for f, (score, r) in zip(req, requests):
+            if f:
+                pipe.execute_command('ZADD', self.key, score, self._encode_request(r))
         pipe.execute()
+        return req
 
     def fetch(self):
         # use atomic range/remove using multi/exec
