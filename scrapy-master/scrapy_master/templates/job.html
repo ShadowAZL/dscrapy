@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Info{% endblock %}
+
+{% block content %}
+    <div class="row">
+        <div class="col-md-3">
+            <div class="list-group">
+                <div class="list-group-item"><a href="/stop}">Stop</a></div>
+                <table id="spiders" class="table list-group-item">
+                    <caption>Spider List</caption>
+                    <thead><tr>
+                        <th>Node Name</th>
+                    </tr></thead>
+                    <tbody id="spiders-body">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="col-md-3">
+                <table id="stats" class="table">
+                    <caption>Stats List</caption>
+                    <thead><tr>
+                        <th>Name</th>
+                        <th>Value</th>
+                    </tr></thead>
+                    <tbody id="stats-body">
+                    </tbody>
+                </table>
+        </div>
+    </div>
+{% endblock %}
+
+{% block custom_scripts %}
+$(document).ready(function(){
+    $.post("/api/status/list", function(data){
+        text = ''
+        $.each(data, function(index){
+            text += '\
+<tr>\
+    <td>' + data[index] + '</td>\
+</tr>'
+        });
+        $('#spiders-body').html(text);
+    });
+    $.post("/api/status/stats", function(data){
+        text = ''
+        $.each(data, function(index){
+            text += '\
+<tr>\
+    <td nowrap>' + index + '</td>\
+    <td nowrap>' + data[index] +'</td>\
+</tr>'
+        });
+        $('#stats-body').html(text);
+    });
+});
+{% endblock %}

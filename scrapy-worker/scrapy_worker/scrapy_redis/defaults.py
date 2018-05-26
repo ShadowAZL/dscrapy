@@ -23,5 +23,3 @@ SCHEDULER_DUPEFILTER_CLASS = 'scrapy_redis.dupefilter.RedisDupeFilter'
 
 START_URLS_KEY = '%(name)s:start_urls'
 START_URLS_AS_SET = False
-
-COOKIES_KEY = '%(name)s:cookies'

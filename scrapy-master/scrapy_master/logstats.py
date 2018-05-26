@@ -31,9 +31,12 @@ class LogStats(Thread):
             self.irate = (item - self.pre_item) / self.interval
             self.prate = (page - self.pre_page) / self.interval
 
+            self.pre_item = item
+            self.pre_page = page
+
             delta = (datetime.now() - self.start_time).seconds or 1
-            self.avg_irate = int(item / delta / 60)
-            self.avg_prate = int(item / delta / 60)
+            self.avg_irate = item / delta / 60.0
+            self.avg_prate = item / delta / 60.0
 
             msg = ("Crawled %(pages)d pages (at %(pagerate)d pages/min. Avg Speed %(avg_prate).2f pages/min), "
                    "scraped %(items)d items (at %(itemrate)d items/min. Avg Speed %(avg_irate).2f items/min))")

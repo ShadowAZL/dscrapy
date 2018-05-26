@@ -10,7 +10,6 @@ from twisted.internet import threads
 from . import connection, defaults
 
 
-# TODO: add SCRAPY_JOB support.
 class Scheduler(object):
     """Redis-based scheduler
 
